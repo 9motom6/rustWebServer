@@ -5,7 +5,7 @@ use std::sync::mpsc::Receiver;
 
 pub struct ThreadPool {
     workers: Vec<Worker>,
-    sender: mpsc::Sender<Job>
+    sender: mpsc::Sender<Job>,
 }
 
 impl ThreadPool {
@@ -31,25 +31,29 @@ impl ThreadPool {
         ThreadPool { workers, sender }
     }
 
-    pub fn execute<F>(&self, f: F)
-        where
-            F: FnOnce() + Send + 'static,
-    {}
+    pub fn execute<F>(&self, f: F) where F: FnOnce() + Send + 'static {
+        let job = Box::new(f);
+
+        self.sender.send(job).unwrap();
+    }
 }
 
-struct Job;
+type Job = Box<dyn FnOnce() + Send + 'static>;
 
 struct Worker {
     id: usize,
-    thread: JoinHandle<()>
+    thread: JoinHandle<()>,
 }
 
 impl Worker {
     fn new(id: usize, receiver: Arc<Mutex<Receiver<Job>>>) -> Worker {
-        let thread = thread::spawn(|| {receiver;});
-        Worker {
-            id,
-            thread
-        }
+        let thread = thread::spawn(move || loop {
+            let job = receiver.lock().unwrap().recv().unwrap();
+
+            println!("Worker {} got a job; executing.", id);
+
+            job();
+        });
+        Worker { id, thread }
     }
 }
